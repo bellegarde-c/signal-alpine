@@ -1,0 +1,56 @@
+version: 2.1
+
+jobs:
+  build-apk:
+    docker:
+      - image: alpine:edge
+
+    resource_class: arm.medium
+    working_directory: /src
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install build dependencies
+          command: |
+            echo http://dl-cdn.alpinelinux.org/alpine/edge/main >/etc/apk/repositories
+            echo http://dl-cdn.alpinelinux.org/alpine/edge/community >>/etc/apk/repositories
+            echo http://dl-cdn.alpinelinux.org/alpine/edge/testing >>/etc/apk/repositories
+            apk update
+            apk add --no-cache alpine-sdk sudo
+
+      - run:
+          name: Setup abuild user
+          command: |
+            adduser -D build
+            addgroup build abuild
+            echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+            mkdir -p /home/build/.abuild
+            chown -R build:build /home/build
+
+      - run:
+          name: Build APK
+          no_output_timeout: 60m
+          command: |
+            chown -R build:build /src
+            su build -c "
+                mkdir -p ~/.abuild
+                abuild-keygen -a -i -n || true
+                abuild -r
+              "
+
+      - run:
+          name: Copy built packages
+          command: |
+            mkdir -p /tmp/packages
+            cp -r /home/build/packages/* /tmp/packages/
+
+      - store_artifacts:
+          path: /tmp/packages
+
+workflows:
+  build:
+    jobs:
+      - build-apk
